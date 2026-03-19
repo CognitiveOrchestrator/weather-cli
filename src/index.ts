@@ -33,26 +33,56 @@ async function fetchWeather(city: string): Promise<WeatherData> {
 function formatWeather(data: WeatherData, city: string): string {
   const current = data.current_condition[0];
   
-  const location = city;
-  
   const temp = current.temp_C;
   const feelsLike = current.FeelsLikeC;
   const humidity = current.humidity;
-  const description = current.weatherDesc[0]?.value || 'Unknown';
+  const description = current.weatherDesc[0]?.value || '未知';
   const windSpeed = current.windspeedKmph;
   const uvIndex = current.uvIndex;
-  
-  const output = [
-    `${chalk.bold('🌤️  Weather Report')}`,
-    `${chalk.blue('Location:')} ${location}`,
-    `${chalk.yellow('Temperature:')} ${temp}°C (Feels like ${feelsLike}°C)`,
-    `${chalk.green('Condition:')} ${description}`,
-    `${chalk.cyan('Humidity:')} ${humidity}%`,
-    `${chalk.magenta('Wind:')} ${windSpeed} km/h`,
-    `${chalk.red('UV Index:')} ${uvIndex}`,
-  ].join('\n');
-  
-  return output;
+
+  // 定义常用颜色别名（可扩展）
+  const title = chalk.bold.cyan;
+  const label = chalk.gray;
+  const value = chalk.white;
+  const tempColor = (t: number) => (t > 30 ? chalk.red : t < 5 ? chalk.blue : chalk.yellow)(`${t}°C`);
+  const uvColor = (uv: string) => {
+    const u = parseInt(uv);
+    if (u >= 8) return chalk.red(uv);
+    if (u >= 6) return chalk.yellow(uv);
+    return chalk.green(uv);
+  };
+
+  // 构建输出行
+  const lines: string[] = [];
+
+  // 头部标题
+  lines.push(title('┌─────────────────────────────┐'));
+  lines.push(title(`│   📍 ${chalk.bold(city)}  ·  实时天气  │`));
+  lines.push(title('├─────────────────────────────┤'));
+
+  // 温度 + 天气描述（一行）
+  const tempDisplay = `🌡️  ${tempColor(parseInt(temp))}`;
+  const feelsDisplay = `体感 ${tempColor(parseInt(feelsLike))}`;
+  const weatherIcon = description.includes('晴') ? '☀️' :
+                      description.includes('云') ? '☁️' :
+                      description.includes('雨') ? '🌧️' : '🌈';
+  lines.push(`│  ${weatherIcon} ${chalk.cyan(description.padEnd(4))}  ${tempDisplay} (${feelsDisplay.padEnd(6)})  │`);
+
+  // 分隔线
+  lines.push(title('├─────────────────────────────┤'));
+
+  // 湿度 + 风速（一行两列）
+  const humidityStr = `💧 湿度 ${chalk.cyan(humidity.padStart(2))}%`;
+  const windStr = `🌬️ 风速 ${chalk.cyan(windSpeed.padStart(3))} km/h`;
+  lines.push(`│  ${humidityStr.padEnd(18)} ${windStr.padEnd(16)}│`);
+
+  // UV指数单独一行（可扩展更多指标）
+  lines.push(`│  ☀️ UV指数 ${uvColor(uvIndex.padStart(2))} (${uvIndex})                         │`);
+
+  // 底部边框
+  lines.push(title('└─────────────────────────────┘'));
+
+  return lines.join('\n');
 }
 
 const program = new Command();
