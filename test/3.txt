@@ -1,24 +1,43 @@
-因为中文字符在终端中通常占用**两个英文字符宽度**，而 JavaScript 的 `String.prototype.padEnd` / `padStart` 只按字符数计算长度，导致文字实际显示宽度不一致，边框错位。另外，emoji 和特殊符号的宽度也因终端而异，进一步影响对齐。
+## CLI 显示对齐问题及解决方案
 
-要解决这个问题，需要引入一个能正确测量字符串**显示宽度**的库（如 [`string-width`](https://www.npmjs.com/package/string-width)），然后手动计算填充空格，确保每一行内容的总宽度固定。
+### 1. 中文字符与表情符号宽度计算问题
 
-以下是改进后的 `formatWeather` 函数（假设你已经安装了 `string-width`）：
+**问题**：
+JavaScript 原生的 `String.prototype.padEnd` / `padStart` 方法按字符数计算长度，无法正确处理：
+- **中文字符**：通常占用 2 个英文字符宽度，但在 `padEnd` 中被视为 1 个字符
+- **表情符号（Emoji）**：宽度因终端而异（1-2 字符），且部分 emoji 含有零宽连接符
+- **ANSI 颜色代码**：Chalk 生成的转义序列不影响显示宽度，但会被 `padEnd` 计入长度
+
+**具体表现**：
+- 边框严重错位，内容行与分隔线不对齐
+- 同一城市名在不同宽度下的显示不一致
+- 手动调整的固定长度（如 `padEnd(18)`）在混合内容时失效
+- 在 JSON 模式下输出污染（日志混入数据）
+
+**建议**：
+1. 引入 `string-width` 库正确测量字符串的**显示宽度**
+2. 使用辅助函数自动计算填充空格，确保每行总宽度一致
+3. 或将布局逻辑完全委托给 `boxen` 等专业格式化库
+
+### 2. 使用 string-width 库实现精确对齐
+
+**解决方案**：
+安装 `string-width` 并创建辅助函数，基于显示宽度动态计算填充：
 
 ```bash
 npm install string-width
 ```
 
-修改后的代码（关键部分）：
+**核心辅助函数**：
 
 ```typescript
 import stringWidth from 'string-width';
 
-// 辅助函数：生成固定宽度的行，左右自动填充空格
+// 生成固定宽度的行，左右自动填充空格
 function fixedLine(leftPart: string, rightPart = '', totalWidth = 31): string {
   const leftWidth = stringWidth(leftPart);
   const rightWidth = stringWidth(rightPart);
   const spaces = totalWidth - leftWidth - rightWidth;
-  // 如果内容超出宽度，截断（可选）
   if (spaces < 0) {
     // 简单处理：去掉右侧部分或截断左侧
     return `│${leftPart.slice(0, totalWidth - 2)}│`;
@@ -32,7 +51,13 @@ function leftLine(content: string, totalWidth = 31): string {
   const spaces = totalWidth - contentWidth;
   return `│${content}${' '.repeat(spaces)}│`;
 }
+```
 
+### 3. 改进后的 formatWeather 函数
+
+**完整实现**：
+
+```typescript
 function formatWeather(data: WeatherData, city: string, unit: string = 'metric', days: number = 3, advanced: boolean = false): string {
   // ... 前面的变量定义保持不变（temp, feelsLike, humidity, description 等）
   
@@ -125,20 +150,32 @@ function formatWeather(data: WeatherData, city: string, unit: string = 'metric',
 }
 ```
 
-### 主要改动
+### 4. 核心改进点
 
-1. **引入了 `string-width`**：正确测量中文字符、emoji 的显示宽度。
-2. **使用 `fixedLine` 和 `leftLine` 辅助函数**：自动计算需要填充的空格数量，保证每行内容总宽度一致。
-3. **固定内宽 `innerWidth`**：边框内部的宽度设为 31，所有内容行（不含左右竖线）的显示宽度均等于该值。
-4. **居中和左右对齐**：标题行居中，湿度/风速、日出/日落等行左右对齐。
-5. **减少硬编码的固定长度**：避免使用 `padEnd(18)` 这种无法适应中文字符的写法。
+1. **显示宽度感知**：`string-width` 正确测量中文字符、emoji 和 ANSI 代码的实际显示宽度
+2. **动态填充计算**：`fixedLine` 和 `leftLine` 函数自动计算所需空格，保证每行总宽度一致
+3. **固定内部宽度**：设定 `innerWidth = 31`，所有内容行（不含竖线）的显示宽度均等于该值
+4. **灵活的对齐方式**：
+   - 标题行居中显示
+   - 湿度/风速、日出/日落等行左右对齐
+   - 单行内容左对齐
+5. **消除硬编码**：不再使用 `padEnd(18)` 等无法适应内容变化的硬编码值
 
-### 其他建议
+### 5. 其他建议与注意事项
 
-- 如果希望边框更美观，可以使用 [`boxen`](https://www.npmjs.com/package/boxen) 库自动绘制边框，但会增加依赖。
-- 注意 `stringWidth` 需要处理颜色代码（chalk 生成的 ANSI 转义码不会影响实际显示宽度，`string-width` 会自动忽略它们）。
-- 如果城市名过长导致标题行超出内宽，可以截断或缩小字体（但一般城市名不会太长）。
+- **终端兼容性**：不同终端对 emoji 宽度的处理可能略有差异，但绝大多数现代终端（iTerm2、Windows Terminal、VSCode 终端）表现一致
+- **性能考虑**：`string-width` 计算非常轻量，对 CLI 工具性能影响可忽略
+- **备选方案**：如不希望增加依赖，可考虑 `boxen` 库自动处理边框和对齐，但会失去部分布局控制权
+- **边界处理**：辅助函数包含简单的内容截断逻辑，防止内容过长破坏布局
+- **颜色代码处理**：`string-width` 自动忽略 ANSI 转义码，无需特殊处理 Chalk 生成的彩色文本
 
-将上述代码替换原 `formatWeather` 函数，并安装 `string-width`，运行效果将更加整齐。
+### 6. 验证与测试
 
-如果还有具体对齐问题（如某些行仍然错位），可以调整 `innerWidth` 的值，或检查某些特殊字符的宽度（例如某些终端的 emoji 宽度可能不同）。
+1. **视觉验证**：测试多种城市名长度（短如"京"，长如"乌鲁木齐"）
+2. **混合内容测试**：包含中文、英文、emoji、颜色代码的复合内容
+3. **边界测试**：极长描述文本（如"局部地区有强对流天气伴有短时雷暴大风"）的截断效果
+4. **终端兼容性**：在 CMD、PowerShell、Mintty、iTerm2 等多个终端中验证对齐效果
+
+---
+
+**最终效果**：改进后，无论城市名长度、天气描述内容如何变化，边框始终保持完美对齐，所有信息行整齐排列，视觉体验显著提升。

@@ -1,3 +1,24 @@
+## 早期格式化函数实现记录
+
+### 1. 原始格式化函数的对齐问题
+
+**问题**：早期版本 `formatWeather` 函数使用 JavaScript 原生的 `padEnd`/`padStart` 方法处理字符串对齐，但这些方法按字符数计算长度，无法正确处理中文字符（通常占用2个英文字符宽度）和表情符号（宽度不定），导致边框错位、布局混乱。
+
+**具体表现**：
+- 中文字符宽度计算错误：`"北京"` 显示为2字符宽，但在终端中实际占用4字符宽
+- 表情符号宽度不一致：不同终端对 `☀️`、`🌧️` 等表情符号的显示宽度处理不同
+- 硬编码的固定长度：使用 `padEnd(18)`、`padStart(3)` 等硬编码值，无法适应不同内容
+- 布局代码冗长：手动绘制边框和分隔线，维护困难
+
+**建议**：
+1. 引入 `string-width` 库正确测量字符串显示宽度
+2. 使用辅助函数自动计算填充空格，确保每行总宽度一致
+3. 或改用 `boxen` 库自动绘制边框，简化布局代码
+4. 分离布局逻辑和显示逻辑，提高代码可维护性
+
+### 2. 原始实现代码
+
+```typescript
 function formatWeather(data: WeatherData, city: string): string {
   const current = data.current_condition[0];
   
@@ -52,3 +73,8 @@ function formatWeather(data: WeatherData, city: string): string {
 
   return lines.join('\n');
 }
+```
+
+### 3. 后续改进
+
+此问题在「中文字符对齐解决方案」（3.txt）中得到解决，引入了 `string-width` 库并重构了布局逻辑，最终版本使用了 `boxen` 库进一步简化实现。
