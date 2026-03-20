@@ -9,6 +9,7 @@ import Table from 'cli-table3';
 import ora from 'ora';
 import * as dotenv from 'dotenv';
 import NodeCache from 'node-cache';
+import stringWidth from 'string-width';
 
 dotenv.config();
 
@@ -726,8 +727,16 @@ function formatWallpaper(data: WeatherData, city: string, unit: string): string 
   const tempUnit = unit === 'imperial' ? '°F' : '°C';
   const displayTemp = unit === 'imperial' ? Math.round((temp * 9/5) + 32) : temp;
   
-  const width = 50;
+  const width = 46;
   const lines: string[] = [];
+  
+  // 辅助函数：居中文本
+  const centerText = (text: string): string => {
+    const textWidth = stringWidth(text);
+    const padding = Math.max(0, Math.floor((width - textWidth) / 2));
+    const rightPadding = Math.max(0, width - textWidth - padding);
+    return ' '.repeat(padding) + text + ' '.repeat(rightPadding);
+  };
   
   // 顶部边框
   lines.push(chalk.cyan('╔' + '═'.repeat(width) + '╗'));
@@ -735,31 +744,29 @@ function formatWallpaper(data: WeatherData, city: string, unit: string): string 
   
   // 城市名（居中）
   const cityLine = `${icon} ${city}`;
-  const cityPadding = Math.floor((width - cityLine.length) / 2);
-  lines.push(chalk.cyan('║') + ' '.repeat(cityPadding) + chalk.bold.white(cityLine) + ' '.repeat(width - cityPadding - cityLine.length) + chalk.cyan('║'));
+  lines.push(chalk.cyan('║') + chalk.bold.white(centerText(cityLine)) + chalk.cyan('║'));
   
   // 空行
   lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
   
-  // 温度（大字体）
+  // 温度
   const tempStr = `${displayTemp}${tempUnit}`;
-  const tempPadding = Math.floor((width - tempStr.length) / 2);
-  lines.push(chalk.cyan('║') + ' '.repeat(tempPadding) + chalk.bold.yellow(tempStr) + ' '.repeat(width - tempPadding - tempStr.length) + chalk.cyan('║'));
+  lines.push(chalk.cyan('║') + chalk.bold.yellow(centerText(tempStr)) + chalk.cyan('║'));
   
   // 天气描述
-  const descPadding = Math.floor((width - description.length) / 2);
-  lines.push(chalk.cyan('║') + ' '.repeat(descPadding) + chalk.white(description) + ' '.repeat(width - descPadding - description.length) + chalk.cyan('║'));
+  lines.push(chalk.cyan('║') + chalk.white(centerText(description)) + chalk.cyan('║'));
   
   // 空行
   lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
   
   // 底部信息
   const info = `💧${current.humidity}%  🌬️${current.windDirection}风`;
-  const infoPadding = Math.floor((width - info.length) / 2);
-  lines.push(chalk.cyan('║') + ' '.repeat(infoPadding) + chalk.gray(info) + ' '.repeat(width - infoPadding - info.length) + chalk.cyan('║'));
+  lines.push(chalk.cyan('║') + chalk.gray(centerText(info)) + chalk.cyan('║'));
+  
+  // 空行
+  lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
   
   // 底部边框
-  lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
   lines.push(chalk.cyan('╚' + '═'.repeat(width) + '╝'));
   
   return lines.join('\n');
