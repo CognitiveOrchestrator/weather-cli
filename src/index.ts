@@ -9,15 +9,115 @@ import Table from 'cli-table3';
 import ora from 'ora';
 import * as dotenv from 'dotenv';
 import NodeCache from 'node-cache';
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
 
 
 dotenv.config();
 
 // 高德天气API Key
-const GAODE_API_KEY = process.env.GAODE_MAP_API_KEY || '';
+let GAODE_API_KEY = process.env.GAODE_MAP_API_KEY || '';
 
 // 本地缓存（默认30分钟）
 const weatherCache = new NodeCache({ stdTTL: 1800, checkperiod: 60 });
+
+/**
+ * 确保高德API Key已配置，如果未配置则提示用户输入
+ */
+async function ensureGaodeApiKey(options: { json?: boolean } = {}): Promise<void> {
+  if (GAODE_API_KEY && GAODE_API_KEY !== 'your_gaode_map_api_key_here') {
+    return; // 已配置有效Key
+  }
+
+  // JSON模式下不进行交互，直接抛出错误
+  if (options.json) {
+    throw new Error('请在 .env 文件中配置高德天气API Key (GAODE_MAP_API_KEY)');
+  }
+
+  // 非交互式环境不进行提示
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error(chalk.red('❌ 高德天气API Key未配置，请在 .env 文件中设置 GAODE_MAP_API_KEY'));
+    process.exit(1);
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  console.log('');
+  console.log(chalk.cyan('🔑 高德天气API Key配置'));
+  console.log(chalk.gray('='.repeat(50)));
+  console.log('');
+  console.log('要使用天气查询功能，需要高德地图API Key。');
+  console.log('请访问: ' + chalk.underline.cyan('https://lbs.amap.com/api/webservice/guide/create-project/get-key'));
+  console.log('注册开发者并创建Web服务API Key。');
+  console.log('');
+
+  return new Promise((resolve, reject) => {
+    rl.question(chalk.yellow('请输入您的高德天气API Key: '), async (apiKey) => {
+      rl.close();
+      
+      if (!apiKey || apiKey.trim() === '') {
+        console.error(chalk.red('❌ API Key不能为空，请重新运行配置'));
+        process.exit(1);
+      }
+
+      apiKey = apiKey.trim();
+      
+      try {
+        // 验证API Key格式（基本检查）
+        if (apiKey.length < 20) {
+          console.error(chalk.yellow('⚠️  API Key格式可能不正确，请确保是32位字符'));
+        }
+        
+        // 读取或创建.env文件
+        const envPath = path.join(process.cwd(), '.env');
+        let envContent = '';
+        
+        if (fs.existsSync(envPath)) {
+          envContent = fs.readFileSync(envPath, 'utf8');
+        }
+        
+        // 更新GAODE_MAP_API_KEY
+        const keyLine = `GAODE_MAP_API_KEY=${apiKey}`;
+        const lines = envContent.split('\n').filter(line => line.trim() !== '');
+        
+        // 查找是否已有GAODE_MAP_API_KEY行
+        let gaodeKeyFound = false;
+        const updatedLines = lines.map(line => {
+          if (line.startsWith('GAODE_MAP_API_KEY=')) {
+            gaodeKeyFound = true;
+            return keyLine;
+          }
+          return line;
+        });
+        
+        if (!gaodeKeyFound) {
+          updatedLines.push(keyLine);
+        }
+        
+        // 写入文件
+        fs.writeFileSync(envPath, updatedLines.join('\n') + '\n', 'utf8');
+        
+        console.log('');
+        console.log(chalk.green('✅ API Key已保存到 ') + chalk.cyan(envPath));
+        console.log(chalk.gray('现在可以正常使用天气查询功能了！'));
+        console.log('');
+        
+        // 重新加载环境变量
+        dotenv.config({ override: true });
+        GAODE_API_KEY = process.env.GAODE_MAP_API_KEY || '';
+        
+        resolve();
+      } catch (error) {
+        console.error(chalk.red('❌ 配置失败:'), error);
+        reject(error);
+      }
+    });
+  });
+}
 
 // ==================== 类型定义 ====================
 
@@ -1141,6 +1241,9 @@ program
     };
     
     try {
+      // 确保高德API Key已配置
+      await ensureGaodeApiKey({ json: options.json });
+      
       // 解析城市
       if (!options.json) {
         const resolverSpinner = ora(`解析城市: ${inputCity}...`).start();
