@@ -722,54 +722,37 @@ function formatWallpaper(data: WeatherData, city: string, unit: string): string 
   const current = data.current_condition[0];
   const temp = parseInt(current.temp_C);
   const description = current.weatherDesc[0]?.value || '未知';
-  const icon = getWeatherIcon(description);
   
   const tempUnit = unit === 'imperial' ? '°F' : '°C';
   const displayTemp = unit === 'imperial' ? Math.round((temp * 9/5) + 32) : temp;
   
-  const width = 46;
-  const lines: string[] = [];
+  // 固定宽度（字符串显示宽度）
+  const W = 44;
+  const pad = (n: number) => ' '.repeat(Math.max(0, n));
   
-  // 辅助函数：居中文本
-  const centerText = (text: string): string => {
-    const textWidth = stringWidth(text);
-    const padding = Math.max(0, Math.floor((width - textWidth) / 2));
-    const rightPadding = Math.max(0, width - textWidth - padding);
-    return ' '.repeat(padding) + text + ' '.repeat(rightPadding);
+  // 使用 string-width 计算真实显示宽度
+  const center = (s: string) => {
+    const w = stringWidth(s);
+    const left = Math.floor((W - w) / 2);
+    const right = W - w - left;
+    return pad(left) + s + pad(right);
   };
   
-  // 顶部边框
-  lines.push(chalk.cyan('╔' + '═'.repeat(width) + '╗'));
-  lines.push(chalk.cyan('║' + ' '.repeat(width) + '║'));
+  const top = '╔' + '═'.repeat(W) + '╗';
+  const bot = '╚' + '═'.repeat(W) + '╝';
+  const emp = '║' + pad(W) + '║';
+  const bar = (s: string) => '║' + center(s) + '║';
   
-  // 城市名（居中）
-  const cityLine = `${icon} ${city}`;
-  lines.push(chalk.cyan('║') + chalk.bold.white(centerText(cityLine)) + chalk.cyan('║'));
-  
-  // 空行
-  lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
-  
-  // 温度
-  const tempStr = `${displayTemp}${tempUnit}`;
-  lines.push(chalk.cyan('║') + chalk.bold.yellow(centerText(tempStr)) + chalk.cyan('║'));
-  
-  // 天气描述
-  lines.push(chalk.cyan('║') + chalk.white(centerText(description)) + chalk.cyan('║'));
-  
-  // 空行
-  lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
-  
-  // 底部信息
-  const info = `💧${current.humidity}%  🌬️${current.windDirection}风`;
-  lines.push(chalk.cyan('║') + chalk.gray(centerText(info)) + chalk.cyan('║'));
-  
-  // 空行
-  lines.push(chalk.cyan('║') + ' '.repeat(width) + chalk.cyan('║'));
-  
-  // 底部边框
-  lines.push(chalk.cyan('╚' + '═'.repeat(width) + '╝'));
-  
-  return lines.join('\n');
+  return [
+    top, emp,
+    bar(city),
+    emp,
+    bar(`${displayTemp}${tempUnit}`),
+    bar(description),
+    emp,
+    bar(`湿度: ${current.humidity}%  风向: ${current.windDirection}风`),
+    emp, bot
+  ].map(l => chalk.cyan(l)).join('\n');
 }
 
 // ==================== 主程序 ====================
