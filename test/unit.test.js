@@ -1,5 +1,5 @@
 // 单元测试 - 使用ES模块导入已导出的函数
-import { parseWindPower, localizeErrorMessage, getCityAdcode, getInternationalCity } from '../dist/index.js';
+import { parseWindPower, localizeErrorMessage, getCityAdcode, getInternationalCity, getAdcodeByGeocode, getExtendedCityAdcode } from '../dist/index.js';
 import assert from 'assert';
 
 console.log('🧪 天气CLI工具函数单元测试');
@@ -149,6 +149,55 @@ try {
   const result = getInternationalCity('unknown city');
   assert(result === null);
   console.log('  ✓ 未知城市返回 null');
+} catch (e) {
+  console.log('  ✗ 失败:', e.message);
+}
+
+// getAdcodeByGeocode 基本测试
+console.log('\n🔬 测试 getAdcodeByGeocode 基本接口:');
+try {
+  // 测试函数存在性和类型
+  assert.strictEqual(typeof getAdcodeByGeocode, 'function');
+  console.log('  ✓ getAdcodeByGeocode 是一个函数');
+  
+  // 测试返回Promise（异步函数）
+  const result = getAdcodeByGeocode('测试地址');
+  assert(result instanceof Promise);
+  console.log('  ✓ getAdcodeByGeocode 返回 Promise');
+} catch (e) {
+  console.log('  ✗ 失败:', e.message);
+}
+
+// getExtendedCityAdcode 测试
+console.log('\n🔬 测试 getExtendedCityAdcode:');
+try {
+  assert.strictEqual(typeof getExtendedCityAdcode, 'function');
+  console.log('  ✓ getExtendedCityAdcode 是一个函数');
+  
+  // 测试函数流程：应该先尝试静态映射，再尝试地理编码
+  const result = getExtendedCityAdcode('测试城市');
+  assert(result instanceof Promise);
+  console.log('  ✓ getExtendedCityAdcode 返回 Promise');
+} catch (e) {
+  console.log('  ✗ 失败:', e.message);
+}
+
+// 静态映射功能测试（使用不存在的城市以避免API调用）
+console.log('\n🔬 测试静态映射功能:');
+try {
+  // 测试已知城市在静态映射中
+  const result = getCityAdcode('北京');
+  assert.strictEqual(result, '110000');
+  console.log('  ✓ getCityAdcode("北京") 返回 "110000"');
+} catch (e) {
+  console.log('  ✗ 失败:', e.message);
+}
+
+try {
+  // 测试未知城市返回null
+  const result = getCityAdcode('不存在城市');
+  assert.strictEqual(result, null);
+  console.log('  ✓ getCityAdcode("不存在城市") 返回 null');
 } catch (e) {
   console.log('  ✗ 失败:', e.message);
 }

@@ -22,6 +22,9 @@ let GAODE_API_KEY = process.env.GAODE_MAP_API_KEY || '';
 // 本地缓存（默认30分钟）
 const weatherCache = new NodeCache({ stdTTL: 1800, checkperiod: 60 });
 
+// 行政区划缓存，避免重复查询地理编码API
+const geocodeCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // 24小时缓存
+
 /**
  * 确保高德API Key已配置，如果未配置则提示用户输入
  */
@@ -560,6 +563,94 @@ function getCityAdcode(city: string): string | null {
   return cityAdcodes[normalized] || null;
 }
 
+/**
+ * 通过高德地理编码API解析地址获取adcode
+ * 支持：省、市、区/县、街道等完整行政区划名称
+ */
+async function getAdcodeByGeocode(address: string): Promise<string | null> {
+  // 检查缓存
+  const cacheKey = `geocode_${address}`;
+  const cached = geocodeCache.get<string>(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  if (!GAODE_API_KEY || GAODE_API_KEY === 'your_gaode_map_api_key_here') {
+    return null;
+  }
+
+  try {
+    const encodedAddress = encodeURIComponent(address);
+    const url = `https://restapi.amap.com/v3/geocode/geo?address=${encodedAddress}&output=JSON&key=${GAODE_API_KEY}`;
+    
+    const response = await fetchWithTimeout(url, 10000);
+    
+    if (!response.ok) {
+      console.error(chalk.yellow(`⚠️  地理编码API请求失败: ${response.status}`));
+      return null;
+    }
+    
+    const data = await response.json() as {
+      status: string;
+      info: string;
+      infocode: string;
+      geocodes?: Array<{
+        formatted_address: string;
+        province: string;
+        city: string;
+        district: string;
+        adcode: string;
+        level: string;
+      }>;
+    };
+    
+    // 检查API返回状态
+    if (data.status !== '1') {
+      console.error(chalk.yellow(`⚠️  地理编码API错误: ${data.info}`));
+      return null;
+    }
+    
+    // 如果没有结果
+    if (!data.geocodes || data.geocodes.length === 0) {
+      return null;
+    }
+    
+    // 选择第一个结果（通常是最匹配的）
+    const geocode = data.geocodes[0];
+    const adcode = geocode.adcode;
+    
+    // 验证adcode格式 (6位数字)
+    if (!adcode || !/^\d{6}$/.test(adcode)) {
+      console.error(chalk.yellow(`⚠️  地理编码返回无效adcode: ${adcode}`));
+      return null;
+    }
+    
+    // 缓存结果
+    geocodeCache.set(cacheKey, adcode);
+    
+    return adcode;
+  } catch (error) {
+    console.error(chalk.yellow(`⚠️  地理编码异常: ${error}`));
+    return null;
+  }
+}
+
+/**
+ * 扩展的城市adcode获取函数，支持地理编码API
+ * 先尝试现有映射，再通过地理编码API解析
+ */
+async function getExtendedCityAdcode(city: string): Promise<string | null> {
+  // 1. 先尝试现有映射（快速路径）
+  const directAdcode = getCityAdcode(city);
+  if (directAdcode) {
+    return directAdcode;
+  }
+  
+  // 2. 尝试地理编码API
+  const geocodeAdcode = await getAdcodeByGeocode(city);
+  return geocodeAdcode;
+}
+
 function getInternationalCity(city: string): { lat: number; lon: number; name: string } | null {
   const normalized = city.toLowerCase().replace(/\s+/g, '');
   return internationalCities[normalized] || null;
@@ -708,12 +799,16 @@ function translateWeather(desc: string): string {
 
 // ==================== API函数 ====================
 
-async function fetchGaodeWeather(city: string): Promise<WeatherData> {
+async function fetchGaodeWeather(city: string, adcodeParam?: string): Promise<WeatherData> {
   if (!GAODE_API_KEY || GAODE_API_KEY === 'your_gaode_map_api_key_here') {
     throw new Error('请在 .env 文件中配置高德天气API Key (GAODE_MAP_API_KEY)');
   }
 
-  const adcode = getCityAdcode(city);
+  // 如果提供了adcode参数，则使用它；否则通过城市名查找
+  let adcode: string | null = adcodeParam || null;  // adcodeParam是string | undefined，转为string | null
+  if (!adcode) {
+    adcode = getCityAdcode(city);
+  }
   if (adcode === null) {
     throw new Error(`未知城市: ${city}`);
   }
@@ -944,17 +1039,17 @@ async function fetchWeather(city: string, useCache: boolean = true): Promise<Wea
   
   let data: WeatherData;
   
-  // 先检查国内城市（根据6.txt建议#1：优先使用高德API）
-  const adcode = getCityAdcode(city);
+  // 先尝试扩展的国内城市adcode获取（支持省市区县地理编码）
+  const adcode = await getExtendedCityAdcode(city);
   if (adcode !== null) {
-    data = await fetchGaodeWeather(city);
+    data = await fetchGaodeWeather(city, adcode);
   } else {
     // 检查国际城市
     const intlCity = getInternationalCity(city);
     if (intlCity) {
       data = await fetchOpenMeteoWeather(intlCity.lat, intlCity.lon);
     } else {
-      throw new Error(`未知城市: ${city}`);
+      throw new Error(`未知城市或行政区划: ${city}，请检查名称是否正确或配置API Key`);
     }
   }
   
@@ -1321,6 +1416,8 @@ export {
   localizeErrorMessage,
   getCityAdcode,
   getInternationalCity,
+  getAdcodeByGeocode,
+  getExtendedCityAdcode,
 };
 
 // ==================== 导出类型定义 ====================
