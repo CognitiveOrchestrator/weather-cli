@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { resolveCity } from './resolveCity.js';
+import stringWidth from 'string-width';
 
 interface WeatherData {
   current_condition: Array<{
@@ -172,6 +173,30 @@ function getWeatherDescription(code: number): string {
   return descriptions[code] || '未知天气';
 }
 
+// 辅助函数：生成固定宽度的行，左右自动填充空格
+function fixedLine(leftPart: string, rightPart = '', totalWidth = 31): string {
+  const leftWidth = stringWidth(leftPart);
+  const rightWidth = stringWidth(rightPart);
+  const spaces = totalWidth - leftWidth - rightWidth;
+  // 如果内容超出宽度，截断（可选）
+  if (spaces < 0) {
+    // 简单处理：截断左侧内容
+    return `│${leftPart.slice(0, totalWidth - 2)}│`;
+  }
+  return `│${leftPart}${' '.repeat(spaces)}${rightPart}│`;
+}
+
+// 生成带左边框的行（右侧不留内容）
+function leftLine(content: string, totalWidth = 31): string {
+  const contentWidth = stringWidth(content);
+  const spaces = totalWidth - contentWidth;
+  if (spaces < 0) {
+    // 截断内容以适应宽度
+    return `│${content.slice(0, totalWidth - 2)}│`;
+  }
+  return `│${content}${' '.repeat(spaces)}│`;
+}
+
 function formatWeather(data: WeatherData, city: string, unit: string = 'metric', days: number = 3, advanced: boolean = false): string {
   const current = data.current_condition[0];
   
@@ -229,59 +254,72 @@ function formatWeather(data: WeatherData, city: string, unit: string = 'metric',
     return chalk.green(uv);
   };
 
-  // 构建输出行
+  // 定义边框宽度（不包含左右竖线本身，竖线算1个字符，所以总宽度 = 边框宽度 + 2）
+  const innerWidth = 40; // 内容区域宽度，可根据需要调整
+  
   const lines: string[] = [];
 
-  // 头部标题
-  lines.push(title('┌─────────────────────────────┐'));
-  lines.push(title(`│   📍 ${chalk.bold(city)}  ·  实时天气  │`));
-  lines.push(title('├─────────────────────────────┤'));
+  // 顶部边框
+  lines.push(chalk.bold.cyan('┌' + '─'.repeat(innerWidth) + '┐'));
 
-  // 温度 + 天气描述（一行）
-  const tempDisplay = `🌡️  ${tempColor(parseInt(temp))}`;
-  const feelsDisplay = `体感 ${tempColor(parseInt(feelsLike))}`;
+  // 标题行：居中显示城市名和“实时天气”
+  const titleContent = `📍 ${chalk.bold(city)}  ·  实时天气`;
+  const titleWidth = stringWidth(titleContent);
+  const leftPadding = Math.floor((innerWidth - titleWidth) / 2);
+  const rightPadding = innerWidth - titleWidth - leftPadding;
+  lines.push(chalk.bold.cyan(`│${' '.repeat(leftPadding)}${titleContent}${' '.repeat(rightPadding)}│`));
+
+  // 分隔线
+  lines.push(chalk.bold.cyan('├' + '─'.repeat(innerWidth) + '┤'));
+
+  // 天气行：图标 + 描述 + 温度 + 体感温度
   const weatherIcon = description.includes('晴') ? '☀️' :
                       description.includes('云') ? '☁️' :
                       description.includes('雨') ? '🌧️' : '🌈';
-  lines.push(`│  ${weatherIcon} ${chalk.cyan(description.padEnd(4))}  ${tempDisplay} (${feelsDisplay.padEnd(6)})  │`);
+  const descPart = `${weatherIcon} ${chalk.cyan(description)}`;
+  const tempPart = `${tempColor(parseInt(temp))}`;
+  const feelsPart = `体感 ${tempColor(parseInt(feelsLike))}`;
+  const mainLine = `${descPart}  ${tempPart} (${feelsPart})`;
+  lines.push(leftLine(mainLine, innerWidth));
 
   // 分隔线
-  lines.push(title('├─────────────────────────────┤'));
+  lines.push(chalk.bold.cyan('├' + '─'.repeat(innerWidth) + '┤'));
 
   // 湿度 + 风速（一行两列）
   const convertedWindSpeed = convertWind(parseFloat(windSpeed));
-  const humidityStr = `💧 湿度 ${chalk.cyan(humidity.padStart(2))}%`;
-  const windStr = `🌬️ 风速 ${chalk.cyan(convertedWindSpeed.toString().padStart(3))} ${windUnit}`;
-  lines.push(`│  ${humidityStr.padEnd(18)} ${windStr.padEnd(16)}│`);
+  const humidityStr = `💧 湿度 ${chalk.cyan(humidity)}%`;
+  const windStr = `🌬️ 风速 ${chalk.cyan(convertedWindSpeed)} ${windUnit}`;
+  // 用 fixedLine 将两部分分别放在左右两侧
+  lines.push(fixedLine(humidityStr, windStr, innerWidth));
 
-  // UV指数单独一行（可扩展更多指标）
-  lines.push(`│  ☀️ UV指数 ${uvColor(uvIndex.padStart(2))} (${uvIndex})                         │`);
+  // UV 指数
+  const uvStr = `☀️ UV指数 ${uvColor(uvIndex)} (${uvIndex})`;
+  lines.push(leftLine(uvStr, innerWidth));
 
-  // 高级指标（仅当--advanced参数启用时显示）
   if (advanced) {
-    // 分隔线
-    lines.push(title('├─────────────────────────────┤'));
-    
-    // 高级指标标题
-    lines.push(title('│  📈 高级指标                            │'));
-    
-    // 高级指标行
-    lines.push(`│  🌅 日出    ${chalk.cyan(sunrise.padEnd(10))}                 │`);
-    lines.push(`│  🌇 日落    ${chalk.cyan(sunset.padEnd(10))}                 │`);
-    lines.push(`│  📊 气压    ${chalk.cyan(pressure.padEnd(10))} hPa            │`);
-    lines.push(`│  🌧️ 降水    ${chalk.cyan(chanceOfRain.padEnd(10))} %             │`);
-    lines.push(`│  👁️ 能见度  ${chalk.cyan(visibility.padEnd(10))} km             │`);
+    // 高级指标分隔线
+    lines.push(chalk.bold.cyan('├' + '─'.repeat(innerWidth) + '┤'));
+    lines.push(leftLine('📈 高级指标', innerWidth));
+
+    // 日出日落（左右排列）
+    const sunriseStr = `🌅 日出 ${chalk.cyan(sunrise)}`;
+    const sunsetStr = `🌇 日落 ${chalk.cyan(sunset)}`;
+    lines.push(fixedLine(sunriseStr, sunsetStr, innerWidth));
+
+    // 气压和降水概率（左右排列）
+    const pressureStr = `📊 气压 ${chalk.cyan(pressure)} hPa`;
+    const rainStr = `🌧️ 降水 ${chalk.cyan(chanceOfRain)}%`;
+    lines.push(fixedLine(pressureStr, rainStr, innerWidth));
+
+    // 能见度单独一行（也可以和别的一起，但这里单独）
+    const visStr = `👁️ 能见度 ${chalk.cyan(visibility)} km`;
+    lines.push(leftLine(visStr, innerWidth));
   }
 
-  // 多日预报（显示未来几天预报）
   if (data.weather && data.weather.length > 1) {
-    // 分隔线
-    lines.push(title('├─────────────────────────────┤'));
-    
-    // 多日预报标题
-    lines.push(title(`│  📅 未来${days}天预报                        │`));
-    
-    // 显示未来几天预报
+    lines.push(chalk.bold.cyan('├' + '─'.repeat(innerWidth) + '┤'));
+    lines.push(leftLine(`📅 未来${days}天预报`, innerWidth));
+
     const maxDays = Math.min(days, data.weather.length);
     for (let i = 1; i < maxDays; i++) {
       const dayWeather = data.weather[i];
@@ -290,16 +328,16 @@ function formatWeather(data: WeatherData, city: string, unit: string = 'metric',
       const maxTemp = dayWeather.maxtempC || 'N/A';
       const minTemp = dayWeather.mintempC || 'N/A';
       const tempRange = `${minTemp}°C ~ ${maxTemp}°C`;
-      
-      // 简单天气描述（从第一个hourly数据获取）
       const weatherDesc = dayWeather.hourly?.[0]?.weatherDesc?.[0]?.value || '未知';
-      
-      lines.push(`│  ${dayName.padEnd(4)} │ ${chalk.cyan(weatherDesc.padEnd(6))} │ ${chalk.yellow(tempRange.padEnd(14))} │`);
+
+      // 每行显示：星期、天气、温度范围
+      const forecastLine = `${dayName.padEnd(4)} │ ${chalk.cyan(weatherDesc.padEnd(6))} │ ${chalk.yellow(tempRange)}`;
+      lines.push(leftLine(forecastLine, innerWidth));
     }
   }
 
   // 底部边框
-  lines.push(title('└─────────────────────────────┘'));
+  lines.push(chalk.bold.cyan('└' + '─'.repeat(innerWidth) + '┘'));
 
   return lines.join('\n');
 }
