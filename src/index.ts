@@ -17,12 +17,15 @@ interface WeatherData {
   }>;
   weather: Array<{
     date: string;
+    maxtempC: string;
+    mintempC: string;
     astronomy: Array<{
       sunrise: string;
       sunset: string;
     }>;
     hourly: Array<{
       chanceofrain: string;
+      weatherDesc: Array<{ value: string }>;
     }>;
   }>;
 }
@@ -118,12 +121,15 @@ async function fetchWeatherFallback(city: string): Promise<WeatherData> {
       }],
       weather: [{
         date: new Date().toISOString().split('T')[0],
+        maxtempC: String(current.temperature_2m + 5), // 估算最高温度
+        mintempC: String(current.temperature_2m - 5), // 估算最低温度
         astronomy: [{
           sunrise: "06:29 AM", // 默认日出时间
           sunset: "06:25 PM", // 默认日落时间
         }],
         hourly: [{
           chanceofrain: "0", // 默认无降水概率
+          weatherDesc: [{ value: getWeatherDescription(current.weather_code) }],
         }],
       }],
     };
@@ -265,6 +271,31 @@ function formatWeather(data: WeatherData, city: string, unit: string = 'metric',
     lines.push(`│  📊 气压    ${chalk.cyan(pressure.padEnd(10))} hPa            │`);
     lines.push(`│  🌧️ 降水    ${chalk.cyan(chanceOfRain.padEnd(10))} %             │`);
     lines.push(`│  👁️ 能见度  ${chalk.cyan(visibility.padEnd(10))} km             │`);
+  }
+
+  // 多日预报（显示未来几天预报）
+  if (data.weather && data.weather.length > 1) {
+    // 分隔线
+    lines.push(title('├─────────────────────────────┤'));
+    
+    // 多日预报标题
+    lines.push(title(`│  📅 未来${days}天预报                        │`));
+    
+    // 显示未来几天预报
+    const maxDays = Math.min(days, data.weather.length);
+    for (let i = 1; i < maxDays; i++) {
+      const dayWeather = data.weather[i];
+      const date = new Date(dayWeather.date);
+      const dayName = date.toLocaleDateString('zh-CN', { weekday: 'short' });
+      const maxTemp = dayWeather.maxtempC || 'N/A';
+      const minTemp = dayWeather.mintempC || 'N/A';
+      const tempRange = `${minTemp}°C ~ ${maxTemp}°C`;
+      
+      // 简单天气描述（从第一个hourly数据获取）
+      const weatherDesc = dayWeather.hourly?.[0]?.weatherDesc?.[0]?.value || '未知';
+      
+      lines.push(`│  ${dayName.padEnd(4)} │ ${chalk.cyan(weatherDesc.padEnd(6))} │ ${chalk.yellow(tempRange.padEnd(14))} │`);
+    }
   }
 
   // 底部边框
