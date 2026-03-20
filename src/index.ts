@@ -9,7 +9,7 @@ import Table from 'cli-table3';
 import ora from 'ora';
 import * as dotenv from 'dotenv';
 import NodeCache from 'node-cache';
-import stringWidth from 'string-width';
+
 
 dotenv.config();
 
@@ -20,6 +20,101 @@ const GAODE_API_KEY = process.env.GAODE_MAP_API_KEY || '';
 const weatherCache = new NodeCache({ stdTTL: 1800, checkperiod: 60 });
 
 // ==================== 类型定义 ====================
+
+// 高德天气API响应类型
+interface GaodeLiveItem {
+  city: string;
+  adcode: string;
+  province: string;
+  weather: string;
+  temperature: string;
+  winddirection: string;
+  windpower: string;
+  humidity: string;
+  reporttime: string;
+}
+
+interface GaodeLiveResponse {
+  status: string;
+  info: string;
+  infocode: string;
+  lives?: GaodeLiveItem[];
+}
+
+interface GaodeCastItem {
+  date: string;
+  week: string;
+  dayweather: string;
+  nightweather: string;
+  daytemp: string;
+  nighttemp: string;
+  daywind: string;
+  nightwind: string;
+  daypower: string;
+  nightpower: string;
+}
+
+interface GaodeForecastItem {
+  city: string;
+  adcode: string;
+  province: string;
+  reporttime: string;
+  casts: GaodeCastItem[];
+}
+
+interface GaodeForecastResponse {
+  status: string;
+  info: string;
+  infocode: string;
+  forecasts?: GaodeForecastItem[];
+}
+
+// Open-Meteo API响应类型
+interface OpenMeteoCurrent {
+  temperature_2m: number;
+  relative_humidity_2m: number;
+  weather_code: number;
+  wind_speed_10m: number;
+  wind_direction_10m: number;
+}
+
+interface OpenMeteoDaily {
+  time: string[];
+  temperature_2m_max: number[];
+  temperature_2m_min: number[];
+  weather_code: number[];
+  sunrise?: string[];
+  sunset?: string[];
+}
+
+interface OpenMeteoHourly {
+  time: string[];
+  temperature_2m: number[];
+  weather_code: number[];
+  relative_humidity_2m: number[];
+  wind_speed_10m: number[];
+}
+
+interface OpenMeteoResponse {
+  current: OpenMeteoCurrent;
+  daily: OpenMeteoDaily;
+  hourly: OpenMeteoHourly;
+}
+
+// 空气质量API响应类型
+interface AirQualityCurrent {
+  european_aqi: number;
+  pm10: number;
+  pm2_5: number;
+  carbon_monoxide: number;
+  nitrogen_dioxide: number;
+  sulphur_dioxide: number;
+  ozone: number;
+}
+
+interface AirQualityResponse {
+  current: AirQualityCurrent;
+}
 
 interface CurrentCondition {
   temp_C: string;
@@ -246,6 +341,7 @@ const internationalCities: Record<string, { lat: number; lon: number; name: stri
   'tokyo': { lat: 35.6762, lon: 139.6503, name: '东京' },
   '东京': { lat: 35.6762, lon: 139.6503, name: '东京' },
   'new york': { lat: 40.7128, lon: -74.0060, name: '纽约' },
+  'newyork': { lat: 40.7128, lon: -74.0060, name: '纽约' },
   '纽约': { lat: 40.7128, lon: -74.0060, name: '纽约' },
   'london': { lat: 51.5074, lon: -0.1278, name: '伦敦' },
   '伦敦': { lat: 51.5074, lon: -0.1278, name: '伦敦' },
@@ -258,8 +354,10 @@ const internationalCities: Record<string, { lat: number; lon: number; name: stri
   'sydney': { lat: -33.8688, lon: 151.2093, name: '悉尼' },
   '悉尼': { lat: -33.8688, lon: 151.2093, name: '悉尼' },
   'los angeles': { lat: 34.0522, lon: -118.2437, name: '洛杉矶' },
+  'losangeles': { lat: 34.0522, lon: -118.2437, name: '洛杉矶' },
   '洛杉矶': { lat: 34.0522, lon: -118.2437, name: '洛杉矶' },
   'san francisco': { lat: 37.7749, lon: -122.4194, name: '旧金山' },
+  'sanfrancisco': { lat: 37.7749, lon: -122.4194, name: '旧金山' },
   '旧金山': { lat: 37.7749, lon: -122.4194, name: '旧金山' },
   'berlin': { lat: 52.5200, lon: 13.4050, name: '柏林' },
   '柏林': { lat: 52.5200, lon: 13.4050, name: '柏林' },
@@ -268,6 +366,10 @@ const internationalCities: Record<string, { lat: number; lon: number; name: stri
   'dubai': { lat: 25.2048, lon: 55.2708, name: '迪拜' },
   '迪拜': { lat: 25.2048, lon: 55.2708, name: '迪拜' },
   'hong kong': { lat: 22.3193, lon: 114.1694, name: '香港' },
+  'hongkong': { lat: 22.3193, lon: 114.1694, name: '香港' },
+  '香港': { lat: 22.3193, lon: 114.1694, name: '香港' },
+  'macau': { lat: 22.1987, lon: 113.5439, name: '澳门' },
+  '澳门': { lat: 22.1987, lon: 113.5439, name: '澳门' },
   'bangkok': { lat: 13.7563, lon: 100.5018, name: '曼谷' },
   '曼谷': { lat: 13.7563, lon: 100.5018, name: '曼谷' },
   'mumbai': { lat: 19.0760, lon: 72.8777, name: '孟买' },
@@ -386,13 +488,91 @@ async function getCityAQI(city: string): Promise<AirQuality | undefined> {
 }
 
 function parseWindPower(power: string): string {
-  // 保留原始风力等级显示
-  const match = power.match(/(\d+)/);
-  if (match) {
-    const level = match[1];
-    return `${level}级`;
+  const level = power.match(/(\d+)/)?.[1] || '0';
+  return `${level}级`;
+}
+
+// 错误消息本地化函数
+function localizeErrorMessage(errorMsg: string): string {
+  // 高德API特定错误信息检测
+  // 先检查是否包含高德API的特定错误信息
+  if (errorMsg.includes('高德天气API错误:')) {
+    const apiError = errorMsg.replace('高德天气API错误:', '').trim();
+    
+    // 高德API常见错误信息映射
+    const gaodeErrors: Record<string, string> = {
+      'INVALID_USER_KEY': 'API密钥无效或格式不正确',
+      'INSUFFICIENT_PRIVILEGES': 'API权限不足',
+      'OVER_QUOTA': '请求次数超限（API配额已用尽）',
+      'INVALID_PARAMS': '参数错误',
+      'SERVICE_NOT_AVAILABLE': '服务暂时不可用',
+      'DAILY_QUERY_OVER_LIMIT': '日调用量超限（今日次数已用完）',
+      'ACCESS_TOO_FREQUENT': '访问频率超限（请稍后再试）',
+      'INVALID_USER_IP': 'IP白名单验证失败',
+      'INVALID_USER_SIGNATURE': '数字签名验证失败',
+      '逾期的用户': '用户账户已过期',
+      '未知的用户': '用户账户不存在',
+      '请求超时': 'API请求超时',
+    };
+
+    for (const [key, message] of Object.entries(gaodeErrors)) {
+      if (apiError.includes(key) || apiError.toLowerCase().includes(key.toLowerCase())) {
+        return `高德天气API错误: ${message}`;
+      }
+    }
+
+    // 尝试从info字段提取更友好的错误信息
+    if (apiError.includes('超过每日') || apiError.includes('配额') || apiError.includes('次数')) {
+      return '高德天气API错误: API调用配额可能已用尽，建议等待次日重置或升级API套餐';
+    }
   }
-  return power || '≤3级';
+
+  const translations: Record<string, string> = {
+    // 网络错误
+    'Failed to fetch': '无法连接到天气服务，请检查网络连接和代理设置',
+    'ECONNREFUSED': '网络连接被拒绝',
+    'ECONNRESET': '网络连接被重置',
+    'ETIMEDOUT': '网络连接超时',
+    'timeout': '请求超时',
+    // API错误
+    'Invalid API key': 'API密钥无效',
+    'Quota exceeded': 'API配额已用尽',
+    'Invalid parameters': '参数无效',
+    'Service unavailable': '服务暂时不可用',
+    'Internal server error': '服务器内部错误',
+    // 其他常见错误
+    'ENOTFOUND': '域名解析失败',
+    'Unexpected token': '服务器返回数据格式错误',
+    'SyntaxError': '数据解析错误',
+    'TypeError': '类型错误',
+  };
+
+  for (const [en, zh] of Object.entries(translations)) {
+    if (errorMsg.toLowerCase().includes(en.toLowerCase())) {
+      return zh;
+    }
+  }
+
+  // 如果没有匹配的翻译，返回原错误消息（可能是中文）
+  return errorMsg;
+}
+
+// 带超时的fetch辅助函数
+async function fetchWithTimeout(url: string, timeoutMs: number = 10000, options: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return response;
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
 }
 
 // 天气图标映射
@@ -436,32 +616,73 @@ async function fetchGaodeWeather(city: string): Promise<WeatherData> {
   const adcode = getCityAdcode(city);
   const baseUrl = 'https://restapi.amap.com/v3/weather/weatherInfo';
   
+  
+  
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    
-    const [liveResponse, forecastResponse] = await Promise.all([
-      fetch(`${baseUrl}?city=${adcode}&key=${GAODE_API_KEY}&extensions=base&output=JSON`, { signal: controller.signal }),
-      fetch(`${baseUrl}?city=${adcode}&key=${GAODE_API_KEY}&extensions=all&output=JSON`, { signal: controller.signal }),
+    // 并发请求，每个请求有独立的超时
+    const [liveResponse, forecastResponse] = await Promise.allSettled([
+      fetchWithTimeout(`${baseUrl}?city=${adcode}&key=${GAODE_API_KEY}&extensions=base&output=JSON`, 10000),
+      fetchWithTimeout(`${baseUrl}?city=${adcode}&key=${GAODE_API_KEY}&extensions=all&output=JSON`, 10000),
     ]);
-    
-    clearTimeout(timeout);
-    
-    if (!liveResponse.ok || !forecastResponse.ok) {
-      throw new Error('高德天气API请求失败');
+
+    // 检查这两个请求的结果
+    let liveData: GaodeLiveResponse | null = null;
+    let forecastData: GaodeForecastResponse | null = null;
+    let hasError = false;
+
+    if (liveResponse.status === 'fulfilled' && liveResponse.value.ok) {
+      liveData = await liveResponse.value.json() as GaodeLiveResponse;
+    } else {
+      console.error(chalk.yellow(`⚠️  实时天气请求失败: ${liveResponse.status}`));
+      if (liveResponse.status === 'rejected') {
+        console.error(chalk.yellow(`  错误: ${liveResponse.reason}`));
+      } else if (liveResponse.status === 'fulfilled' && !liveResponse.value.ok) {
+        console.error(chalk.yellow(`  状态码: ${liveResponse.value.status}`));
+      }
+      hasError = true;
+    }
+
+    if (forecastResponse.status === 'fulfilled' && forecastResponse.value.ok) {
+      forecastData = await forecastResponse.value.json() as GaodeForecastResponse;
+    } else {
+      console.error(chalk.yellow(`⚠️  天气预报请求失败: ${forecastResponse.status}`));
+      if (forecastResponse.status === 'rejected') {
+        console.error(chalk.yellow(`  错误: ${forecastResponse.reason}`));
+      } else if (forecastResponse.status === 'fulfilled' && !forecastResponse.value.ok) {
+        console.error(chalk.yellow(`  状态码: ${forecastResponse.value.status}`));
+      }
+      hasError = true;
+    }
+
+    if (hasError) {
+      // 如果两个请求都失败，抛出错误
+      if (!liveData && !forecastData) {
+        throw new Error('高德天气API请求失败: 实时和预报数据均无法获取');
+      }
+      // 如果只有一个失败，继续处理可用的数据
+      console.error(chalk.yellow('⚠️  部分数据获取失败，继续使用可用数据'));
+    }
+
+    // 检查API返回的状态码
+    if (liveData && liveData.status !== '1') {
+      console.error(chalk.red(`🚨 高德API错误（实时）: ${liveData.info}`));
+      throw new Error(`高德天气API错误: ${liveData.info}`);
+    }
+    if (forecastData && forecastData.status !== '1') {
+      console.error(chalk.red(`🚨 高德API错误（预报）: ${forecastData.info}`));
+      throw new Error(`高德天气API错误: ${forecastData.info}`);
+    }
+
+    // 如果没有数据，抛出错误
+    if (!liveData || !forecastData) {
+      throw new Error('高德天气API返回数据不完整');
     }
     
-    const liveData = await liveResponse.json() as any;
-    const forecastData = await forecastResponse.json() as any;
-    
-    if (liveData.status !== '1') throw new Error(`高德天气API错误: ${liveData.info}`);
-    if (forecastData.status !== '1') throw new Error(`高德天气API错误: ${forecastData.info}`);
-    
-    const live = liveData.lives[0];
-    const forecasts = forecastData.forecasts[0];
+    const live = liveData.lives![0];
+    const forecasts = forecastData.forecasts![0];
     const casts = forecasts.casts || [];
     
-    const weatherArray: DailyForecast[] = casts.map((cast: any) => ({
+    const weatherArray: DailyForecast[] = casts.map((cast: GaodeCastItem) => ({
       date: cast.date,
       week: cast.week,
       maxtempC: cast.daytemp,
@@ -497,7 +718,8 @@ async function fetchGaodeWeather(city: string): Promise<WeatherData> {
     };
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`高德天气服务错误: ${error.message}`);
+      const localizedMsg = localizeErrorMessage(error.message);
+      throw new Error(`高德天气服务错误: ${localizedMsg}`);
     }
     throw new Error('未知的天气服务错误');
   }
@@ -507,15 +729,11 @@ async function fetchOpenMeteoWeather(lat: number, lon: number): Promise<WeatherD
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min,weather_code&hourly=temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m&timezone=auto&forecast_days=5`;
   
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+    const response = await fetchWithTimeout(url, 10000);
     
     if (!response.ok) throw new Error('Open-Meteo API请求失败');
     
-    const data = await response.json() as any;
+    const data = await response.json() as OpenMeteoResponse;
     const current = data.current;
     const daily = data.daily;
     const hourly = data.hourly;
@@ -586,15 +804,34 @@ async function fetchOpenMeteoWeather(lat: number, lon: number): Promise<WeatherD
     };
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(`Open-Meteo服务错误: ${error.message}`);
+      const localizedMsg = localizeErrorMessage(error.message);
+      throw new Error(`Open-Meteo服务错误: ${localizedMsg}`);
     }
     throw new Error('未知的天气服务错误');
   }
 }
 
+// 生成统一的缓存键
+function getCacheKey(city: string): string {
+  // 国内城市用adcode
+  const adcode = cityAdcodes[city.toLowerCase().replace(/\s+/g, '')];
+  if (adcode) {
+    return `weather_${adcode}`;
+  }
+  
+  // 国际城市用坐标
+  const intl = getInternationalCity(city);
+  if (intl) {
+    return `weather_${intl.lat.toFixed(2)}_${intl.lon.toFixed(2)}`;
+  }
+  
+  // 兜底：标准化城市名
+  return `weather_${city.toLowerCase().replace(/\s+/g, '')}`;
+}
+
 async function fetchWeather(city: string, useCache: boolean = true): Promise<WeatherData> {
   // 检查缓存
-  const cacheKey = `weather_${city.toLowerCase()}`;
+  const cacheKey = getCacheKey(city);
   if (useCache) {
     const cached = weatherCache.get<WeatherData>(cacheKey);
     if (cached) {
@@ -625,7 +862,7 @@ async function fetchAirQuality(lat: number, lon: number): Promise<AirQuality | n
     const response = await fetch(url);
     if (!response.ok) return null;
     
-    const data = await response.json() as any;
+    const data = await response.json() as AirQualityResponse;
     const current = data.current;
     
     const aqi = current.european_aqi || 0;
@@ -836,33 +1073,28 @@ function formatWallpaper(data: WeatherData, city: string, unit: string): string 
   const tempUnit = unit === 'imperial' ? '°F' : '°C';
   const displayTemp = unit === 'imperial' ? Math.round((temp * 9/5) + 32) : temp;
   
-  // 固定宽度（字符串显示宽度）
-  const W = 44;
-  const pad = (n: number) => ' '.repeat(Math.max(0, n));
+  // 构建显示内容
+  const lines = [
+    chalk.cyan.bold(city),
+    '',
+    chalk.whiteBright.bold(`${displayTemp}${tempUnit}`),
+    chalk.white(description),
+    '',
+    chalk.gray(`湿度: ${current.humidity}%  风向: ${current.windDirection}风`)
+  ];
   
-  // 使用 string-width 计算真实显示宽度
-  const center = (s: string) => {
-    const w = stringWidth(s);
-    const left = Math.floor((W - w) / 2);
-    const right = W - w - left;
-    return pad(left) + s + pad(right);
-  };
+  const content = lines.join('\n');
   
-  const top = '╔' + '═'.repeat(W) + '╗';
-  const bot = '╚' + '═'.repeat(W) + '╝';
-  const emp = '║' + pad(W) + '║';
-  const bar = (s: string) => '║' + center(s) + '║';
-  
-  return [
-    top, emp,
-    bar(city),
-    emp,
-    bar(`${displayTemp}${tempUnit}`),
-    bar(description),
-    emp,
-    bar(`湿度: ${current.humidity}%  风向: ${current.windDirection}风`),
-    emp, bot
-  ].map(l => chalk.cyan(l)).join('\n');
+  return boxen(content, {
+    padding: 1,
+    margin: 0,
+    borderStyle: 'round',
+    borderColor: 'cyan',
+    align: 'center',
+    title: '天气信息',
+    titleAlignment: 'center',
+    backgroundColor: '#1a1a1a'
+  });
 }
 
 // ==================== 主程序 ====================
@@ -918,6 +1150,9 @@ program
         // 获取空气质量
         if (options.aqi) {
           weatherData.aqi = await getCityAQI(targetCity);
+          if (!weatherData.aqi) {
+            console.log(chalk.yellow('⚠️  该城市的空气质量数据暂时不可用'));
+          }
         }
         
         weatherSpinner.succeed('天气数据获取成功');
@@ -932,6 +1167,7 @@ program
         
         if (options.aqi) {
           weatherData.aqi = await getCityAQI(targetCity);
+          // JSON模式下不输出警告，但可以在返回对象中添加字段
         }
         
         const formatted = formatWeather(weatherData, targetCity, options);
@@ -939,11 +1175,8 @@ program
       }
     } catch (error) {
       if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('ECONNREFUSED')) {
-          console.error(chalk.red('❌ 无法连接到天气服务，请检查网络连接'));
-        } else {
-          console.error(chalk.red(`❌ ${error.message}`));
-        }
+        const localizedMsg = localizeErrorMessage(error.message);
+        console.error(chalk.red(`❌ ${localizedMsg}`));
       } else {
         console.error(chalk.red('❌ 发生未知错误'));
       }
@@ -951,4 +1184,38 @@ program
     }
   });
 
-program.parse();
+// 仅在直接执行时才运行CLI
+function isMainModule(): boolean {
+  // 简化的检查：只要不是在测试环境或作为模块导入，都认为是主模块
+  // 实际检查：查看是否有城市参数或其他CLI选项
+  const hasCliArgs = process.argv.length > 2;
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID;
+  
+  if (isTestEnv) {
+    return false;
+  }
+  
+  // 如果有CLI参数，就认为是直接执行
+  return hasCliArgs;
+}
+
+if (isMainModule()) {
+  program.parse();
+}
+
+// ==================== 导出供测试使用的函数 ====================
+export {
+  parseWindPower,
+  localizeErrorMessage,
+  getCityAdcode,
+  getInternationalCity,
+};
+
+// ==================== 导出类型定义 ====================
+export type {
+  DailyForecast,
+  HourlyForecast,
+  CurrentCondition,
+  WeatherData,
+  AirQuality,
+};
