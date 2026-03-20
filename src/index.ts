@@ -1122,6 +1122,7 @@ function formatWeather(data: WeatherData, city: string, options: {
       nightWeather: d.nightweather,
       maxTemp: parseInt(d.maxtempC),
       minTemp: parseInt(d.mintempC),
+      week: d.week,
     }));
     
     return JSON.stringify({
@@ -1256,7 +1257,7 @@ function formatWeather(data: WeatherData, city: string, options: {
       const d = data.weather[startIdx + i];
       const dateStr = d.date.slice(5);
       const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-      const week = weekDays[(parseInt(d.week) - 1) % 7] || d.week;
+      const week = weekDays[parseInt(d.week) % 7] || d.week;
       
       table.push([
         dateStr,
